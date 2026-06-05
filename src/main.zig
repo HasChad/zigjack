@@ -22,10 +22,15 @@ const Card = struct {
         };
     }
 };
-
+const Turn = enum { Player, Table };
+const State = enum { Menu, Play, End };
 const Game = struct {
     oppo: std.ArrayList(Card),
+    oppo_count: i16,
     player: std.ArrayList(Card),
+    player_count: i16,
+    turn: Turn,
+    state: State,
 };
 
 const Textures = struct {
@@ -48,22 +53,24 @@ pub fn main() anyerror!void {
 
     var game = Game{
         .oppo = .empty,
+        .oppo_count = 0,
         .player = .empty,
+        .player_count = 0,
+        .turn = Turn.Player,
+        .state = State.Play,
     };
     defer game.oppo.deinit(allocator);
     defer game.player.deinit(allocator);
 
-    var card = Card.new(rand);
-    try game.oppo.append(allocator, card);
-    card = Card.new(rand);
-    try game.oppo.append(allocator, card);
-    card = Card.new(rand);
-    try game.oppo.append(allocator, card);
+    var card_n = Card.new(rand);
+    try game.oppo.append(allocator, card_n);
+    card_n = Card.new(rand);
+    try game.oppo.append(allocator, card_n);
 
-    card = Card.new(rand);
-    try game.player.append(allocator, card);
-    card = Card.new(rand);
-    try game.player.append(allocator, card);
+    card_n = Card.new(rand);
+    try game.player.append(allocator, card_n);
+    card_n = Card.new(rand);
+    try game.player.append(allocator, card_n);
 
     // texture loading
     const table_image = try rl.loadImage("assets/table.png");
@@ -83,8 +90,40 @@ pub fn main() anyerror!void {
     while (!rl.windowShouldClose()) {
         // Update ------------------------------
         if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
-            card = Card.new(rand);
-            try game.player.append(allocator, card);
+            outer: while (true) {
+                card_n = Card.new(rand);
+
+                for (game.oppo.items) |card| {
+                    if (card.rank == card_n.rank and card.shape == card_n.shape) {
+                        continue :outer;
+                    }
+                }
+                for (game.player.items) |card| {
+                    if (card.rank == card_n.rank and card.shape == card_n.shape) {
+                        continue :outer;
+                    }
+                }
+
+                try game.player.append(allocator, card_n);
+                break;
+            }
+        }
+
+        if (rl.isMouseButtonPressed(rl.MouseButton.right)) {
+            game.turn = Turn.Table;
+        }
+
+        game.oppo_count = 0;
+        for (game.oppo.items) |card| {
+            const addition = if (card.rank == Rank.J or card.rank == Rank.Q or card.rank == Rank.K) 10 else @intFromEnum(card.rank) + 1;
+
+            game.oppo_count += addition;
+        }
+        game.player_count = 0;
+        for (game.player.items) |card| {
+            const addition = if (card.rank == Rank.J or card.rank == Rank.Q or card.rank == Rank.K) 10 else @intFromEnum(card.rank) + 1;
+
+            game.player_count += addition;
         }
 
         // Draw --------------------------------
@@ -109,7 +148,12 @@ fn render(game: Game, textures: Textures) void {
     for (game.oppo.items, 0..) |card, index| {
         rl.drawTextureRec(
             textures.cards,
-            rl.Rectangle.init(
+            if (game.turn == .Player and index == 1) rl.Rectangle.init(
+                (CARD_WIDTH * 0),
+                (CARD_HEIGHT * 4),
+                CARD_WIDTH,
+                CARD_HEIGHT,
+            ) else rl.Rectangle.init(
                 (CARD_WIDTH * @as(f32, @intFromEnum(card.rank))),
                 (CARD_HEIGHT * @as(f32, @intFromEnum(card.shape))),
                 CARD_WIDTH,
@@ -122,6 +166,16 @@ fn render(game: Game, textures: Textures) void {
             .white,
         );
     }
+    var buf: [50]u8 = undefined;
+    var text = std.fmt.bufPrintZ(&buf, "{d}", .{game.oppo_count}) catch unreachable;
+
+    rl.drawText(
+        text,
+        100,
+        50,
+        30,
+        .black,
+    );
 
     // player cards
     total_width = CARD_WIDTH * game.player.items.len + (10 * (game.player.items.len - 1));
@@ -141,6 +195,15 @@ fn render(game: Game, textures: Textures) void {
             .white,
         );
     }
+
+    text = std.fmt.bufPrintZ(&buf, "{d}", .{game.player_count}) catch unreachable;
+    rl.drawText(
+        text,
+        100,
+        SCREEN_HEIGHT - 50,
+        30,
+        .black,
+    );
 
     // const text = "Welcome to ZigJack";
     // const size = rl.measureText(text, 30);
