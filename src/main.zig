@@ -31,6 +31,17 @@ const Game = struct {
     player_count: i16,
     turn: Turn,
     state: State,
+
+    fn new() Game {
+        return Game{
+            .oppo = .empty,
+            .oppo_count = 0,
+            .player = .empty,
+            .player_count = 0,
+            .turn = Turn.Player,
+            .state = State.Play,
+        };
+    }
 };
 
 const Textures = struct {
@@ -51,14 +62,7 @@ pub fn main() anyerror!void {
     var prng: std.Random.DefaultPrng = .init(undefined);
     const rand = prng.random();
 
-    var game = Game{
-        .oppo = .empty,
-        .oppo_count = 0,
-        .player = .empty,
-        .player_count = 0,
-        .turn = Turn.Player,
-        .state = State.Play,
-    };
+    var game = Game.new();
     defer game.oppo.deinit(allocator);
     defer game.player.deinit(allocator);
 
@@ -89,42 +93,66 @@ pub fn main() anyerror!void {
 
     while (!rl.windowShouldClose()) {
         // Update ------------------------------
-        if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
-            outer: while (true) {
-                card_n = Card.new(rand);
 
-                for (game.oppo.items) |card| {
-                    if (card.rank == card_n.rank and card.shape == card_n.shape) {
-                        continue :outer;
+        switch (game.state) {
+            .Play => {
+                if (rl.isMouseButtonPressed(rl.MouseButton.left)) {
+                    outer: while (true) {
+                        card_n = Card.new(rand);
+
+                        for (game.oppo.items) |card| {
+                            if (card.rank == card_n.rank and card.shape == card_n.shape) {
+                                continue :outer;
+                            }
+                        }
+                        for (game.player.items) |card| {
+                            if (card.rank == card_n.rank and card.shape == card_n.shape) {
+                                continue :outer;
+                            }
+                        }
+
+                        try game.player.append(allocator, card_n);
+                        break;
                     }
                 }
-                for (game.player.items) |card| {
-                    if (card.rank == card_n.rank and card.shape == card_n.shape) {
-                        continue :outer;
-                    }
+
+                if (rl.isMouseButtonPressed(rl.MouseButton.right)) {
+                    game.turn = Turn.Table;
                 }
-
-                try game.player.append(allocator, card_n);
-                break;
-            }
-        }
-
-        if (rl.isMouseButtonPressed(rl.MouseButton.right)) {
-            game.turn = Turn.Table;
+            },
+            .End => {
+                if (rl.isKeyPressed(rl.KeyboardKey.r)) {
+                    game = Game.new();
+                }
+            },
+            .Menu => undefined,
         }
 
         game.oppo_count = 0;
+        var contains_ace = false;
         for (game.oppo.items) |card| {
             const addition = if (card.rank == Rank.J or card.rank == Rank.Q or card.rank == Rank.K) 10 else @intFromEnum(card.rank) + 1;
 
+            if (!contains_ace)
+                contains_ace = card.rank == Rank.A;
+
             game.oppo_count += addition;
         }
+        if (game.oppo_count <= 11 and contains_ace)
+            game.oppo_count += 10;
+
+        contains_ace = false;
         game.player_count = 0;
         for (game.player.items) |card| {
             const addition = if (card.rank == Rank.J or card.rank == Rank.Q or card.rank == Rank.K) 10 else @intFromEnum(card.rank) + 1;
 
+            if (!contains_ace)
+                contains_ace = card.rank == Rank.A;
+
             game.player_count += addition;
         }
+        if (game.player_count <= 11 and contains_ace)
+            game.player_count += 10;
 
         // Draw --------------------------------
         render(game, textures);
@@ -166,16 +194,6 @@ fn render(game: Game, textures: Textures) void {
             .white,
         );
     }
-    var buf: [50]u8 = undefined;
-    var text = std.fmt.bufPrintZ(&buf, "{d}", .{game.oppo_count}) catch unreachable;
-
-    rl.drawText(
-        text,
-        100,
-        50,
-        30,
-        .black,
-    );
 
     // player cards
     total_width = CARD_WIDTH * game.player.items.len + (10 * (game.player.items.len - 1));
@@ -195,6 +213,16 @@ fn render(game: Game, textures: Textures) void {
             .white,
         );
     }
+
+    var buf: [50]u8 = undefined;
+    var text = std.fmt.bufPrintZ(&buf, "{d}", .{game.oppo_count}) catch unreachable;
+    rl.drawText(
+        text,
+        100,
+        50,
+        30,
+        .black,
+    );
 
     text = std.fmt.bufPrintZ(&buf, "{d}", .{game.player_count}) catch unreachable;
     rl.drawText(
